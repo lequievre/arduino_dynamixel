@@ -1,0 +1,17 @@
+<library path="lib/librqt_plugins">
+  <class name="dynamixel_motor_plugins_ns/DynamixelMotorPlugin" type="dynamixel_motor_plugins_ns::DynamixelMotorPlugin" base_class_type="rqt_gui_cpp::Plugin">
+    <description>
+      A C++ GUI plugin to manage Dynamixel Motors.
+    </description>
+    <qtgui>
+      <group>
+        <label>Dynamixel_Motor_Plugin</label>
+        <icon type="theme">folder</icon>
+        <statustip>Plugins of Dynamixel Motor.</statustip>
+      </group>
+      <label>Dynamixel motor manager</label>
+      <icon type="theme">image-x-generic</icon>
+      <statustip>A C++ GUI Dynamixel motor manager.</statustip>
+    </qtgui>
+  </class>
+</library>

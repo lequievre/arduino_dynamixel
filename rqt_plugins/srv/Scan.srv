@@ -1,0 +1,7 @@
+uint8 id
+---
+uint16 modelNumber
+uint8 dxl_error
+std_msgs/String dxl_string_error
+int32 dxl_comm_result
+std_msgs/String dxl_string_comm_result

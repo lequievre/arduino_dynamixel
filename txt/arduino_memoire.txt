@@ -1,0 +1,92 @@
+Arduino IDE
+===========
+
+If OpenCM9.04 does not download the program, connect the USB cable while holding down the “User Button”. Status LED will stay lit and the download will be initiated.
+
+
+If permission denied 
+sudo chmod 777 /dev/ttyACM0
+
+
+Example with ros :
+
+File/Examples/ROS/01-Basis/a_LED
+Download the file to OpenCM board
+This file create a ros topic named /led_out with a message of type std_msgs/Byte
+
+
+create a launch file on your laptop to launch rosserial_python :
+
+<launch>
+  <node pkg="rosserial_python" type="serial_node.py" name="turtlebot3_core" output="screen">
+    <param name="port" value="/dev/ttyACM0"/>
+    <param name="baud" value="115200"/>
+  </node>
+</launch>
+
+
+We can use the launch file "turtlebot3_core.launch" in package "turtlebot3_bringup" of turtlebot3 catkin worspace :
+
+cd ~/turtlebot3/catkin_ws
+source devel/setup.bash
+roslaunch turtlebot3_bringup turtlebot3_core.launch
+ 
+Now we got the topic "/led_out":
+
+rostopic list
+rostopic pub -1 /led_out std_msgs/Byte 1
+
+rostopic pub -1 GoalTorque std_msgs/Int16MultiArray "{data:[1, 500]}"
+
+Separate instructions :
+======================
+
+terminal 1:
+roscore
+
+terminal 2:
+rosrun rosserial_python serial_node.py _port:=/dev/ttyACM0
+
+Dynamixel model MX-106
+----------------------
+
+File/Examples/OpenCM9.04/07_Dynamixel_SDK/protocol2.0/ping
+
+works fine a got result on monitor (menu Tools/serial monitor)
+
+Start..
+Succeeded to open the port!
+Succeeded to change the baudrate!
+ID : 1 ModelNumber : 0
+
+
+
+
+
+
+
+
+rostopic pub -1 /led_out std_msgs/Byte 1
+
+
+
+Generate new message :
+====================
+
+-> create catkin workspace + create package + create a new message
+catkin_make the catkin workspace, add the path into $ROS_PACKAGE_PATH (source devel/setup.bash)
+-> remove ros_lib directory : ~/.arduino15/packages/OpenCM904/hardware/OpenCM904/1.3.1/libraries/ros_lib
+-> recreate ros_lib with a python script make_libraries.py inside the ros package rosserial_client :
+rosrun rosserial_client make_libraries ~/.arduino15/packages/OpenCM904/hardware/OpenCM904/1.3.1/libraries
+-> create an arduino sketch : #include <new_package/new_message.h>
+
+
+================================
+
+roslaunch rqt_plugins rospython_serial.launch
+
+rosrun rosserial_arduino make_libraries.py ~/Arduino/librairies/
+
+
+
+

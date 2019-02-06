@@ -88,5 +88,17 @@ roslaunch rqt_plugins rospython_serial.launch
 rosrun rosserial_arduino make_libraries.py ~/Arduino/librairies/
 
 
+=======================================
+
+rostopic pub -1 /GoalTorque rqt_plugins/GoalTorque '{id: 1, goalTorque: 0}'
+
+==========================================
+Set serial USB baudrate
+
+get baudrate current value : sudo setserial -a /dev/ttyACM0
+
+set new baudrate value : sudo stty -F /dev/ttyACM0 1000000
+
+
 
 

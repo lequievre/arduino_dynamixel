@@ -18,13 +18,15 @@
 #define ADDR_PRO_CURRENT                68
 #define ADDR_PRO_PRESENT_POSITION       36
 #define ADDR_PRO_MODEL_NUMBER           0
+#define ADDR_PRO_BAUD_RATE              4
+
 
 // Protocol version
 #define PROTOCOL_VERSION                1.0                 // See which protocol version is used in the Dynamixel
 
 // Default setting
 #define DXL_ID                          1                   // Dynamixel ID: 1 by default
-#define BAUDRATE                        57600
+#define CURRENT_BAUDRATE                1000000      // 57600
 #define DEVICENAME                      "3"                 // Check which port is being used on your controller
                                                             // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0"
 #define TORQUE_ENABLE                   1                   // Value for enabling the torque
@@ -32,6 +34,8 @@
 
 #define TORQUE_CONTROL_ENABLE         1
 #define TORQUE_CONTROL_DISABLE        0
+
+#define BAUD_RATE_115200              16
 
 ros::NodeHandle  nh;
 dynamixel::PortHandler *portHandler;
@@ -138,8 +142,10 @@ void setup() {
     return;
   }
 
+  
+
   // Set port baudrate
-  if (portHandler->setBaudRate(BAUDRATE))
+  if (portHandler->setBaudRate(CURRENT_BAUDRATE))
   {
     Serial.print("Succeeded to change the baudrate!\n");
   }
@@ -149,6 +155,59 @@ void setup() {
     Serial.print("Press any key to terminate...\n");
     return;
   }
+
+   /*delay(100);*/
+   
+  const char *dxl_string_error, *dxl_string_comm_result;
+
+  // Change baudrate
+ /* dxl_comm_result = packetHandler->write1ByteTxRx(portHandler, DXL_ID, ADDR_PRO_BAUD_RATE, BAUD_RATE_115200, &dxl_error);
+  if (dxl_comm_result != COMM_SUCCESS)
+  {
+    packetHandler->getTxRxResult(dxl_comm_result);
+    dxl_string_comm_result = packetHandler->getTxRxResult(dxl_comm_result);
+    Serial.println("Pb of communication to set baud rate ! \n");
+    Serial.println(dxl_string_comm_result);
+  }
+  else if (dxl_error != 0)
+  {
+    packetHandler->getRxPacketError(dxl_error);
+    dxl_string_error = packetHandler->getRxPacketError(dxl_error);
+    Serial.println("Error to set baud rate ! \n");
+    Serial.println(dxl_string_error);
+  }
+  else
+  {
+    Serial.print("Dynamixel has been successfully change the baudrate ! \n");}
+
+
+  delay(100);
+*/
+  // Read current baudrate
+  uint8_t dxl_current_baud_rate = 0; 
+  dxl_comm_result = packetHandler->read1ByteTxRx(portHandler, DXL_ID, ADDR_PRO_BAUD_RATE, (uint8_t*)&dxl_current_baud_rate, &dxl_error);
+  if (dxl_comm_result != COMM_SUCCESS)
+  {
+    packetHandler->getTxRxResult(dxl_comm_result);
+    dxl_string_comm_result = packetHandler->getTxRxResult(dxl_comm_result);
+    Serial.println("Pb of communication to get baud rate ! \n");
+    Serial.println(dxl_string_comm_result);
+  }
+  else if (dxl_error != 0)
+  {
+    packetHandler->getRxPacketError(dxl_error);
+    dxl_string_error = packetHandler->getRxPacketError(dxl_error);
+    Serial.println("Error to get baud rate ! \n");
+    Serial.println(dxl_string_error);
+  }
+  else
+  {
+    Serial.print("Ok read current baud rate ! \n");
+    Serial.println("[Baud Rate : ");      
+    Serial.print(dxl_current_baud_rate);
+    Serial.print(" ]");
+    Serial.println("");
+    }
   
  // Enable Dynamixel Control Torque
   dxl_comm_result = packetHandler->write1ByteTxRx(portHandler, DXL_ID, ADDR_PRO_CONTROL_TORQUE_MODE, TORQUE_CONTROL_ENABLE, &dxl_error);
@@ -162,7 +221,7 @@ void setup() {
   }
   else
   {
-    Serial.print("Dynamixel has been successfully connected \n");}
+    Serial.print("Dynamixel -> successfully Enable Dynamixel Control Torque ! \n");}
 
 }
 
@@ -181,5 +240,5 @@ void loop() {
   
   nh.spinOnce();
 
-  delay(100);
+  //delay(100);
 }

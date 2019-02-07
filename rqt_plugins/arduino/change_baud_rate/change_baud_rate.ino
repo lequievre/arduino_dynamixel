@@ -73,7 +73,7 @@ void setup() {
 
  
   // Change baudrate
-  dxl_comm_result = packetHandler->write1ByteTxRx(portHandler, DXL_ID, ADDR_PRO_BAUD_RATE, NEW_BAUD_RATE_115200, &dxl_error);
+  dxl_comm_result = packetHandler->write1ByteTxRx(portHandler, DXL_ID, ADDR_PRO_BAUD_RATE, NEW_BAUD_RATE_57600, &dxl_error);
   if (dxl_comm_result != COMM_SUCCESS)
   {
     packetHandler->getTxRxResult(dxl_comm_result);

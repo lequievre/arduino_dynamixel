@@ -26,7 +26,7 @@
 
 // Default setting
 #define DXL_ID                          1                   // Dynamixel ID: 1 by default
-#define CURRENT_BAUDRATE                1000000      // 57600
+#define CURRENT_BAUDRATE                115200      // 57600
 #define DEVICENAME                      "3"                 // Check which port is being used on your controller
                                                             // ex) Windows: "COM1"   Linux: "/dev/ttyUSB0"
 #define TORQUE_ENABLE                   1                   // Value for enabling the torque

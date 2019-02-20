@@ -104,4 +104,24 @@ set new baudrate value : sudo stty -F /dev/ttyACM0 1000000
 
 
 
+========== UPDATE FIRMWARE TO PROTOCOL 2.0 ======================
+
+faq about dynamixel : http://support.robotis.com/en/product/actuator/dxl_faq.htm
+
+download : http://www.robotis.us/roboplus2/
+R+ Manager 2.0 , 2.0.1 Windows (exe)
+
+doc about r+manager 2.0 : http://emanual.robotis.com/docs/en/software/rplus2/manager/
+(See Basic Features -> Firmware Update )
+
+Use a USB2Dynamixel to connect directly your laptop to a dynamixel : http://support.robotis.com/en/product/auxdevice/interface/usb2dxl_manual.htm
+
+Protocol 2 doc : http://emanual.robotis.com/docs/en/dxl/protocol2/
+
+
+
+
+
+
+
 

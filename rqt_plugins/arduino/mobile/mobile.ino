@@ -24,7 +24,7 @@ float wheel_position[2];
 float wheel_velocity[2];
 float wheel_effort[2];
 
-char *wheel_names[] = {"wheel_right", "wheel_left" };
+char *wheel_names[2];
 
 void commandVelocityCallback(const geometry_msgs::Twist &msg)
 {
@@ -56,8 +56,18 @@ bool initWorkbench(const std::string port_name, const uint32_t baud_rate)
 
 void getDynamixelsWheelInfo()
 {
-   map_id_wheel_dynamixels["wheel_left"] = DXL_ID_WHEEL_LEFT;
-   map_id_wheel_dynamixels["wheel_right"] = DXL_ID_WHEEL_RIGHT;
+  map_id_wheel_dynamixels["wheel_right"] = DXL_ID_WHEEL_RIGHT;
+  map_id_wheel_dynamixels["wheel_left"] = DXL_ID_WHEEL_LEFT;
+  
+  int i=0;
+  std::map<std::string, uint8_t>::iterator it = map_id_wheel_dynamixels.begin();
+  
+  while (it != map_id_wheel_dynamixels.end())
+  {
+    strcpy(wheel_names[i],(it->first).c_str());
+    it++; 
+    i++;
+  }
 }
 
 bool loadWheelDynamixels(void)
@@ -278,7 +288,6 @@ void loop() {
   wheel_effort[0] = present_data[4]; // wheel right effort
   wheel_effort[1] = present_data[5]; // wheel left effort
   
-
   joint_states_msg.header.stamp = ros::Time::now();
   joint_states_msg.velocity_length = 2;
   joint_states_msg.position_length = 2;

@@ -14,10 +14,10 @@
 #define DXL_ID_WHEEL_RIGHT   3
 
 DynamixelWorkbench dxl_wb;
+
 ros::NodeHandle  nh;
 sensor_msgs::JointState joint_states_msg;
 ros::Publisher joint_states_pub("joint_states", &joint_states_msg, 100);
-
 
 std::map<std::string, uint8_t> map_id_wheel_dynamixels;
 float wheel_position[2];
@@ -28,8 +28,29 @@ char *wheel_names[2];
 
 void commandVelocityCallback(const geometry_msgs::Twist &msg)
 {
+  bool result = false;
+  const char* log;
+  
   double robot_lin_vel = msg.linear.x;
   double robot_ang_vel = msg.angular.z;
+
+  // ******
+  
+  /*
+  result = dxl_wb.addBulkWriteParam(map_id_wheel_dynamixels["wheel_right"], "Goal_velocity", ????, &log);
+  if (result == false)
+  {
+    Serial.println(log);
+    Serial.println("Failed to add bulk write position param");
+  }
+  
+  result = dxl_wb.bulkWrite(&log);
+  if (result == false)
+  {
+    Serial.println(log);
+    Serial.println("Failed to bulk write");
+  }
+  */
 }
 
 ros::Subscriber<geometry_msgs::Twist> cmd_vel_sub("cmd_vel", commandVelocityCallback );

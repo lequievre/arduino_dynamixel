@@ -2,6 +2,20 @@
 #include <ros.h>
 #include <sensor_msgs/JointState.h>
 #include <geometry_msgs/Twist.h>
+#include <std_msgs/Int32.h>
+
+// SYNC_READ_HANDLER(Only for Protocol 2.0)
+#define SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT 0
+
+// Protocol 2.0
+#define ADDR_PRESENT_CURRENT_2 126
+#define ADDR_PRESENT_VELOCITY_2 128
+#define ADDR_PRESENT_POSITION_2 132
+
+#define LENGTH_PRESENT_CURRENT_2 2
+#define LENGTH_PRESENT_VELOCITY_2 4
+#define LENGTH_PRESENT_POSITION_2 4
+
 
 #if defined(__OPENCM904__)
   #define DEVICE_NAME "3" //Dynamixel on Serial3(USART3)  <-OpenCM 485EXP
@@ -10,21 +24,102 @@
 #endif  
 
 #define BAUDRATE  57600
-#define DXL_ID_WHEEL_LEFT    2
-#define DXL_ID_WHEEL_RIGHT   3
+#define DXL_ID_WHEEL_RIGHT   2
+#define DXL_ID_WHEEL_LEFT    3
+#define NB_WHEEL             2
 
 DynamixelWorkbench dxl_wb;
 
 ros::NodeHandle  nh;
 sensor_msgs::JointState joint_states_msg;
-ros::Publisher joint_states_pub("joint_states", &joint_states_msg, 100);
+ros::Publisher joint_states_pub("joint_states", &joint_states_msg);
+
+std_msgs::Int32 present_position_msg;
+ros::Publisher present_position_pub("PresentPosition", &present_position_msg);
 
 std::map<std::string, uint8_t> map_id_wheel_dynamixels;
-float wheel_position[2];
-float wheel_velocity[2];
-float wheel_effort[2];
 
-char *wheel_names[2];
+uint8_t wheel_id_array[2] = {DXL_ID_WHEEL_RIGHT, DXL_ID_WHEEL_LEFT};
+
+int32_t wheel_raw_position[2] = {0, 0};
+float wheel_position[2] = { 0.0, 0.0 };
+int32_t wheel_raw_current[2] = {0, 0};
+float wheel_current[2] = { 0.0, 0.0 };
+int32_t wheel_raw_velocity[2] = {0, 0};
+float wheel_velocity[2] = { 0.0, 0.0 };
+char *wheel_names[2] = {"wheel_right", "wheel_left"};
+
+const uint8_t handler_index = 0;
+
+bool initWheelSyncRead(void)
+{
+  bool result = false;
+  const char* log;
+
+  result = dxl_wb.addSyncReadHandler(ADDR_PRESENT_CURRENT_2,
+                                          (LENGTH_PRESENT_CURRENT_2 + LENGTH_PRESENT_VELOCITY_2 + LENGTH_PRESENT_POSITION_2),
+                                          &log);
+
+  if (result == false)
+  {
+    Serial.println(log);
+    Serial.println("Failed to add sync read handler present position + present velocity + present current");
+    return false;
+  }
+  else
+  {
+    Serial.println("Succeeded to add sync read handler present position + present velocity + present current");
+  }
+
+  return true;                         
+}
+
+bool readWheelSyncDatas()
+{
+    bool result = false;
+    const char* log;
+    
+    result = dxl_wb.syncRead(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
+                               wheel_id_array,
+                               NB_WHEEL,
+                               &log);
+
+   result = dxl_wb.getSyncReadData(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
+                          wheel_id_array,
+                          NB_WHEEL,
+                          ADDR_PRESENT_CURRENT_2,
+                          LENGTH_PRESENT_CURRENT_2,
+                          wheel_raw_current,
+                          &log);
+
+    wheel_current[0] = dxl_wb.convertValue2Current((int16_t)wheel_raw_current[0]);
+    wheel_current[1] = dxl_wb.convertValue2Current((int16_t)wheel_raw_current[1]);
+         
+    result = dxl_wb.getSyncReadData(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
+                                                      wheel_id_array,
+                                                      NB_WHEEL,
+                                                      ADDR_PRESENT_VELOCITY_2,
+                                                      LENGTH_PRESENT_VELOCITY_2,
+                                                      wheel_raw_velocity,
+                                                      &log);
+
+
+    wheel_velocity[0] = dxl_wb.convertValue2Velocity(wheel_id_array[0], wheel_raw_velocity[0]);
+    wheel_velocity[1] = dxl_wb.convertValue2Velocity(wheel_id_array[1], wheel_raw_velocity[1]);
+    
+  
+    result = dxl_wb.getSyncReadData(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
+                                                    wheel_id_array,
+                                                    NB_WHEEL,
+                                                    ADDR_PRESENT_POSITION_2,
+                                                    LENGTH_PRESENT_POSITION_2,
+                                                    wheel_raw_position,
+                                                    &log);
+
+    wheel_position[0] = dxl_wb.convertValue2Radian(wheel_id_array[0], wheel_raw_position[0]); 
+    wheel_position[1] = dxl_wb.convertValue2Radian(wheel_id_array[1], wheel_raw_position[1]);                                            
+
+}
 
 void commandVelocityCallback(const geometry_msgs::Twist &msg)
 {
@@ -65,22 +160,23 @@ bool initWorkbench(const std::string port_name, const uint32_t baud_rate)
   {
     Serial.println(log);
     Serial.println("Failed to init workbench !");
+    return false;
   }
   else
   {
     Serial.print("Succeeded to init workbench with a baudrate : ");
-    Serial.println(BAUDRATE);  
+    Serial.println(BAUDRATE);
   }
 
-  return result;
+  return true;
 }
 
 void getDynamixelsWheelInfo()
 {
   map_id_wheel_dynamixels["wheel_right"] = DXL_ID_WHEEL_RIGHT;
   map_id_wheel_dynamixels["wheel_left"] = DXL_ID_WHEEL_LEFT;
-  
-  int i=0;
+
+ /* int i=0;
   std::map<std::string, uint8_t>::iterator it = map_id_wheel_dynamixels.begin();
   
   while (it != map_id_wheel_dynamixels.end())
@@ -88,7 +184,7 @@ void getDynamixelsWheelInfo()
     strcpy(wheel_names[i],(it->first).c_str());
     it++; 
     i++;
-  }
+}*/
 }
 
 bool loadWheelDynamixels(void)
@@ -114,7 +210,9 @@ bool loadWheelDynamixels(void)
     }
     else
     {
-      Serial.println("Succeeded to ping");
+      Serial.println("Succeeded to ping : ");
+      Serial.print("name : ");
+      Serial.println((it->first).c_str());
       Serial.print("id : ");
       Serial.println((uint8_t)it->second);
       Serial.print("model_number : ");
@@ -165,160 +263,53 @@ bool initWheelDynamixels(void)
   return true;
 }
 
-bool initBulkReadWriteWheelDynamixels(void)
-{
-  bool result = false;
-  const char* log;
-  
-  result = dxl_wb.initBulkWrite(&log);
-  if (result == false)
-  {
-    Serial.println(log);
-    Serial.print("Failed to init Bulk Write !");
-    return false;
-  }
-  
-  result = dxl_wb.initBulkRead(&log);
-  if (result == false)
-  {
-    Serial.println(log);
-    Serial.print("Failed to init Bulk Read !");
-    return false;
-  }
-
-  result = dxl_wb.addBulkReadParam(map_id_wheel_dynamixels["wheel_right"], "Present_Position", &log);
-  if (result == false)
-  {
-    Serial.println(log);
-    Serial.println("Failed to add bulk read position param for wheel right !");
-    return false;
-  }
-
-  result = dxl_wb.addBulkReadParam(map_id_wheel_dynamixels["wheel_left"], "Present_Position", &log);
-  if (result == false)
-  {
-    Serial.println(log);
-    Serial.println("Failed to add bulk read position param for wheel left !");
-    return false;
-  }
-
-  result = dxl_wb.addBulkReadParam(map_id_wheel_dynamixels["wheel_right"], "Present_Velocity", &log);
-  if (result == false)
-  {
-    Serial.println(log);
-    Serial.println("Failed to add bulk read velocity param for wheel right !");
-    return false;
-  }
-
-  result = dxl_wb.addBulkReadParam(map_id_wheel_dynamixels["wheel_left"], "Present_Velocity", &log);
-  if (result == false)
-  {
-    Serial.println(log);
-    Serial.println("Failed to add bulk read velocity param for wheel left !");
-    return false;
-  }
-
-  result = dxl_wb.addBulkReadParam(map_id_wheel_dynamixels["wheel_right"], "Present_Current", &log);
-  if (result == false)
-  {
-    Serial.println(log);
-    Serial.println("Failed to add bulk read current param for wheel right !");
-    return false;
-  }
-
-  result = dxl_wb.addBulkReadParam(map_id_wheel_dynamixels["wheel_left"], "Present_Current", &log);
-  if (result == false)
-  {
-    Serial.println(log);
-    Serial.println("Failed to add bulk read current param for wheel left !");
-    return false;
-  }  
-  
-  return true;
-}
-
-bool writeBulkGoalVelocityWheelDynamixels(int32_t wheel_right_velovity, int32_t wheel_left_velocity)
-{
-  bool result = false;
-  const char* log;
-  
-  result = dxl_wb.addBulkWriteParam(map_id_wheel_dynamixels["wheel_right"], "Goal_Velocity", wheel_right_velovity, &log);
-  if (result == false)
-  {
-    Serial.println(log);
-    Serial.println("Failed to add bulk write velocity param of wheel right !");
-    return false;
-  }
-
-  result = dxl_wb.addBulkWriteParam(map_id_wheel_dynamixels["wheel_left"], "Goal_Velocity", wheel_left_velocity, &log);
-  if (result == false)
-  {
-    Serial.println(log);
-    Serial.println("Failed to add bulk write velocity param of wheel left !");
-    return false;
-  }
-
-  result = dxl_wb.bulkWrite(&log);
-  if (result == false)
-  {
-    Serial.println(log);
-    Serial.println("Failed to bulk write !");
-    return false;
-  }
-
-  return true;
-}
-
 void setup() {
   
   Serial.begin(57600);
   while(!Serial); // Wait for Opening Serial Monitor
-
+  
+  nh.initNode();
   nh.advertise(joint_states_pub);
+  nh.advertise(present_position_pub);
   nh.subscribe(cmd_vel_sub);
 
   if (!initWorkbench(DEVICE_NAME,BAUDRATE)) return;
-  
   getDynamixelsWheelInfo();
   if (!loadWheelDynamixels()) return;
-  if (!initWheelDynamixels()) return;
 
-  if (!initBulkReadWriteWheelDynamixels()) return;
-  
+  if (!initWheelSyncRead()) return;
 }
 
 void loop() {
-  
-  int32_t present_data[6];
-  bool result = false;
-  const char* log;
 
-  result = dxl_wb.getBulkReadData(&present_data[0], &log);
-  if (result == false)
-  {
-    Serial.println(log);
-    Serial.println("Failed to Read Bulk Data !");
-  }
+  readWheelSyncDatas();
+  Serial.print("wheel right position = ");
+  Serial.print(wheel_position[0]);
+  Serial.print(" wheel left position = ");
+  Serial.println(wheel_position[1]);
+  Serial.println("wheel right velocity = ");
+  Serial.print(wheel_velocity[0]);
+  Serial.print(" wheel left velocity = ");
+  Serial.println(wheel_velocity[1]);
+  Serial.println("wheel right current = ");
+  Serial.print(wheel_current[0]);
+  Serial.print(" wheel left current = ");
+  Serial.println(wheel_current[1]);
 
-  wheel_position[0] = present_data[0]; // wheel right position
-  wheel_position[1] = present_data[1]; // wheel left position
 
-  wheel_velocity[0] = present_data[2]; // wheel right velocity
-  wheel_velocity[1] = present_data[3]; // wheel left velocity
-
-  wheel_effort[0] = present_data[4]; // wheel right effort
-  wheel_effort[1] = present_data[5]; // wheel left effort
-  
-  joint_states_msg.header.stamp = ros::Time::now();
+  joint_states_msg.header.stamp = nh.now();
+  joint_states_msg.header.frame_id = "kamal_robot";
   joint_states_msg.velocity_length = 2;
   joint_states_msg.position_length = 2;
   joint_states_msg.effort_length = 2;
   joint_states_msg.name_length = 2;
+  joint_states_msg.name = wheel_names;
   joint_states_msg.position = wheel_position;
   joint_states_msg.velocity = wheel_velocity;
-  joint_states_msg.effort = wheel_effort;
-  joint_states_msg.name = wheel_names;
-  
-  joint_states_pub.publish(&joint_states_msg);
+  joint_states_msg.effort = wheel_current;
 
+  joint_states_pub.publish(&joint_states_msg);
+  
+  nh.spinOnce();
+  delay(1);
 }

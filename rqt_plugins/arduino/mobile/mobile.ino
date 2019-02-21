@@ -1,3 +1,14 @@
+/*
+ * Laurent LEQUIEVRE
+ * Research Engineer, CNRS (France)
+ * laurent.lequievre@uca.fr
+ * UMR 6602 - Institut Pascal
+ * 
+ * rostopic pub -1 /cmd_vel geometry_msgs/Twist  '{linear:  {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0,y: 0.0,z: 0.0}}'
+ * rostopic echo /joint_states
+ * 
+ */
+
 #include <DynamixelWorkbench.h>
 #include <ros.h>
 #include <sensor_msgs/JointState.h>
@@ -6,6 +17,9 @@
 
 // SYNC_READ_HANDLER(Only for Protocol 2.0)
 #define SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT 0
+
+// SYNC_WRITE_HANDLER
+#define SYNC_WRITE_HANDLER_FOR_GOAL_VELOCITY 1
 
 // Protocol 2.0
 #define ADDR_PRESENT_CURRENT_2 126
@@ -50,6 +64,39 @@ float wheel_velocity[2] = { 0.0, 0.0 };
 char *wheel_names[2] = {"wheel_right", "wheel_left"};
 
 const uint8_t handler_index = 0;
+
+
+bool initWheelSyncWrite(void)
+{
+  bool result = false;
+  const char* log;
+  
+  result = dxl_wb.addSyncWriteHandler(map_id_wheel_dynamixels["wheel_right"], "Goal_Velocity", &log);
+  if (result == false)
+  {
+    Serial.println(log);
+    Serial.println("Failed to add sync write handler goal velocity wheel right");
+    //return false;
+  }
+  else
+  {
+    Serial.println("Succeeded to add sync write handler goal velocity wheel right");
+  }
+  
+  result = dxl_wb.addSyncWriteHandler(map_id_wheel_dynamixels["wheel_left"], "Goal_Velocity", &log);
+  if (result == false)
+  {
+    Serial.println(log);
+    Serial.println("Failed to add sync write handler goal velocity wheel left");
+    //return false;
+  }
+  else
+  {
+    Serial.println("Succeeded to add sync write handler goal velocity wheel left");
+  }
+
+  return true;
+}
 
 bool initWheelSyncRead(void)
 {
@@ -129,23 +176,21 @@ void commandVelocityCallback(const geometry_msgs::Twist &msg)
   double robot_lin_vel = msg.linear.x;
   double robot_ang_vel = msg.angular.z;
 
-  // ******
-  
-  /*
-  result = dxl_wb.addBulkWriteParam(map_id_wheel_dynamixels["wheel_right"], "Goal_velocity", ????, &log);
+  int32_t local_dynamixel_velocity[2] = { (int32_t)msg.linear.x, (int32_t)msg.linear.y};
+  //int32_t local_dynamixel_velocity[2] = { 100, 100};
+
+  result = dxl_wb.syncWrite(SYNC_WRITE_HANDLER_FOR_GOAL_VELOCITY, wheel_id_array, NB_WHEEL, local_dynamixel_velocity, 1, &log);
+
   if (result == false)
   {
     Serial.println(log);
-    Serial.println("Failed to add bulk write position param");
+    Serial.println("Failed to sync write handler goal velocity");
   }
-  
-  result = dxl_wb.bulkWrite(&log);
-  if (result == false)
+  else
   {
-    Serial.println(log);
-    Serial.println("Failed to bulk write");
+    Serial.println("Succeeded to sync write handler goal velocity");
   }
-  */
+
 }
 
 ros::Subscriber<geometry_msgs::Twist> cmd_vel_sub("cmd_vel", commandVelocityCallback );
@@ -175,16 +220,6 @@ void getDynamixelsWheelInfo()
 {
   map_id_wheel_dynamixels["wheel_right"] = DXL_ID_WHEEL_RIGHT;
   map_id_wheel_dynamixels["wheel_left"] = DXL_ID_WHEEL_LEFT;
-
- /* int i=0;
-  std::map<std::string, uint8_t>::iterator it = map_id_wheel_dynamixels.begin();
-  
-  while (it != map_id_wheel_dynamixels.end())
-  {
-    strcpy(wheel_names[i],(it->first).c_str());
-    it++; 
-    i++;
-}*/
 }
 
 bool loadWheelDynamixels(void)
@@ -276,14 +311,16 @@ void setup() {
   if (!initWorkbench(DEVICE_NAME,BAUDRATE)) return;
   getDynamixelsWheelInfo();
   if (!loadWheelDynamixels()) return;
+  initWheelDynamixels();
 
   if (!initWheelSyncRead()) return;
+  initWheelSyncWrite();
 }
 
 void loop() {
 
   readWheelSyncDatas();
-  Serial.print("wheel right position = ");
+  /*Serial.print("wheel right position = ");
   Serial.print(wheel_position[0]);
   Serial.print(" wheel left position = ");
   Serial.println(wheel_position[1]);
@@ -294,7 +331,7 @@ void loop() {
   Serial.println("wheel right current = ");
   Serial.print(wheel_current[0]);
   Serial.print(" wheel left current = ");
-  Serial.println(wheel_current[1]);
+  Serial.println(wheel_current[1]);*/
 
 
   joint_states_msg.header.stamp = nh.now();

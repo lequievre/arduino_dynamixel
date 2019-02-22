@@ -213,6 +213,8 @@ void commandVelocityCallback(const geometry_msgs::Twist &msg)
   const uint8_t RIGHT = 0;
 
   double velocity_constant_value = 1 / (WHEEL_RADIUS * RPM_MX_64_2 * 0.10472);
+
+  // Vleft = VO + w prod scal vect(OM)
   
   wheel_velocity[RIGHT] = robot_lin_vel + (robot_ang_vel * WHEEL_SEPARATION / 2);
   wheel_velocity[LEFT]  = robot_lin_vel - (robot_ang_vel * WHEEL_SEPARATION / 2);

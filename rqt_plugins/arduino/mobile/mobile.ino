@@ -10,6 +10,7 @@
  */
 
 #include <DynamixelWorkbench.h>
+#include <math.h>
 #include <ros.h>
 #include <sensor_msgs/JointState.h>
 #include <geometry_msgs/Twist.h>
@@ -40,6 +41,11 @@
 #define DXL_ID_WHEEL_RIGHT   2
 #define DXL_ID_WHEEL_LEFT    3
 #define NB_WHEEL             2
+
+#define CURRENT_UNIT          3.36f   //  3.36[mA]
+#define RPM_MX_64_2           0.229   // 0.229 rpm
+#define WHEEL_RADIUS          0.047  // 4.7 cm
+#define WHEEL_SEPARATION      0.21   // 21 cm
 
 DynamixelWorkbench dxl_wb;
 
@@ -132,8 +138,10 @@ bool readWheelSyncDatas()
                           wheel_raw_current,
                           &log);
 
-    wheel_current[0] = dxl_wb.convertValue2Current((int16_t)wheel_raw_current[0]);
-    wheel_current[1] = dxl_wb.convertValue2Current((int16_t)wheel_raw_current[1]);
+    //wheel_current[0] = dxl_wb.convertValue2Current((int16_t)wheel_raw_current[0]);
+    //wheel_current[1] = dxl_wb.convertValue2Current((int16_t)wheel_raw_current[1]);
+    wheel_current[0] = wheel_raw_current[0] * CURRENT_UNIT;
+    wheel_current[1] = wheel_raw_current[0] * CURRENT_UNIT;
          
     result = dxl_wb.getSyncReadData(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
                                                       wheel_id_array,
@@ -156,23 +164,63 @@ bool readWheelSyncDatas()
                                                     wheel_raw_position,
                                                     &log);
 
-    wheel_position[0] = dxl_wb.convertValue2Radian(wheel_id_array[0], wheel_raw_position[0]); 
-    wheel_position[1] = dxl_wb.convertValue2Radian(wheel_id_array[1], wheel_raw_position[1]);                                            
+    wheel_position[0] = fmod(dxl_wb.convertValue2Radian(wheel_id_array[0], wheel_raw_position[0]),2.0*M_PI); 
+    wheel_position[1] = fmod(dxl_wb.convertValue2Radian(wheel_id_array[1], wheel_raw_position[1]),2.0*M_PI);
 
 }
 
 void commandVelocityCallback(const geometry_msgs::Twist &msg)
 {
+
+  /*
+    RPM = revolution per minute
+    
+    To convert RPM to rad/s, multiply by 0.10472 (which is an approximation of pi/30)
+    RPM * 0.10472 = rad/s
+    
+    To convert rad/s to RPM, multiply by 9.54929 (which is an approximation of 30/pi)
+    rad/s * 9.54929 = RPM
+    
+    The Angular to Linear Velocity formular is : v = r × ω
+
+    Where:
+      v: Linear velocity, in m/s
+      r: Radius, in meter
+      ω: Angular velocity, in rad/s
+    
+    The RPM to Linear Velocity formular is : v = r × RPM × 0.10472
+    
+    Where:
+      v: Linear velocity, in m/s
+      r: Radius, in meter
+      RPM: Angular velocity, in RPM (Rounds per Minute)
+
+    ==> v = r * w = r * (RPM * 0.10472)
+    ==> v = r * ((RPM * Goal_Velocity) * 0.10472)    
+    ==> Goal_Velocity = v / (r * RPM * 0.10472) = v * VELOCITY_CONSTANT_VALUE
+      
+   */
+
   bool result = false;
   const char* log;
   
   double robot_lin_vel = msg.linear.x;
   double robot_ang_vel = msg.angular.z;
 
-  int32_t local_dynamixel_velocity[2] = { (int32_t)msg.linear.x, (int32_t)msg.linear.y};
-  //int32_t local_dynamixel_velocity[2] = { 100, 100};
+  double wheel_velocity[2];
+  int32_t dynamixel_velocity[2];
+  const uint8_t LEFT = 1;
+  const uint8_t RIGHT = 0;
 
-  result = dxl_wb.syncWrite(SYNC_WRITE_HANDLER_FOR_GOAL_VELOCITY, wheel_id_array, NB_WHEEL, local_dynamixel_velocity, 1, &log);
+  double velocity_constant_value = 1 / (WHEEL_RADIUS * RPM_MX_64_2 * 0.10472);
+  
+  wheel_velocity[RIGHT] = robot_lin_vel + (robot_ang_vel * WHEEL_SEPARATION / 2);
+  wheel_velocity[LEFT]  = robot_lin_vel - (robot_ang_vel * WHEEL_SEPARATION / 2);
+
+  dynamixel_velocity[RIGHT] = wheel_velocity[RIGHT] * velocity_constant_value;
+  dynamixel_velocity[LEFT]  = wheel_velocity[LEFT] * velocity_constant_value;
+  
+  result = dxl_wb.syncWrite(SYNC_WRITE_HANDLER_FOR_GOAL_VELOCITY, wheel_id_array, NB_WHEEL, dynamixel_velocity, 1, &log);
 
   if (result == false)
   {
@@ -291,6 +339,39 @@ bool initWheelDynamixels(void)
   return true;
 }
 
+void printWheelsInfos(void)
+{
+  int32_t velocity_limit;
+  bool result = false;
+  const char* log;
+
+  const ModelInfo* modelInfoWheelRight =  dxl_wb.getModelInfo(DXL_ID_WHEEL_RIGHT, &log);
+  Serial.println("Wheel Right Infos :");
+  Serial.print("rpm : "); Serial.println(modelInfoWheelRight->rpm);
+  Serial.print("value_of_min_radian_position : "); Serial.println((int32_t)modelInfoWheelRight->value_of_min_radian_position);
+  Serial.print("value_of_zero_radian_position : "); Serial.println((int32_t)modelInfoWheelRight->value_of_zero_radian_position);
+  Serial.print("value_of_max_radian_position : "); Serial.println((int32_t)modelInfoWheelRight->value_of_max_radian_position);
+  Serial.print("min_radian : "); Serial.println(modelInfoWheelRight->min_radian);
+  Serial.print("max_radian : "); Serial.println(modelInfoWheelRight->max_radian);
+
+  result = dxl_wb.readRegister(DXL_ID_WHEEL_RIGHT, "Velocity_Limit", &velocity_limit, &log);
+  Serial.print("velocity limit : "); Serial.println(velocity_limit);
+
+  const ModelInfo* modelInfoWheelLeft =  dxl_wb.getModelInfo(DXL_ID_WHEEL_LEFT, &log);
+  Serial.println("Wheel Left Infos :");
+  Serial.print("rpm : "); Serial.println(modelInfoWheelLeft->rpm);
+  Serial.print("value_of_min_radian_position : "); Serial.println((int32_t)modelInfoWheelLeft->value_of_min_radian_position);
+  Serial.print("value_of_zero_radian_position : "); Serial.println((int32_t)modelInfoWheelLeft->value_of_zero_radian_position);
+  Serial.print("value_of_max_radian_position : "); Serial.println((int32_t)modelInfoWheelLeft->value_of_max_radian_position);
+  Serial.print("min_radian : "); Serial.println(modelInfoWheelLeft->min_radian);
+  Serial.print("max_radian : "); Serial.println(modelInfoWheelLeft->max_radian);
+
+  result = dxl_wb.readRegister(DXL_ID_WHEEL_LEFT, "Velocity_Limit", &velocity_limit, &log);
+  Serial.println("");
+  Serial.print("wheel left velocity limit : ");
+  Serial.println(velocity_limit);
+}
+
 void setup() {
   
   Serial.begin(57600);
@@ -307,6 +388,8 @@ void setup() {
 
   if (!initWheelSyncRead()) return;
   initWheelSyncWrite();
+
+  printWheelsInfos();
 }
 
 void loop() {

@@ -13,7 +13,6 @@
 #include <ros.h>
 #include <sensor_msgs/JointState.h>
 #include <geometry_msgs/Twist.h>
-#include <std_msgs/Int32.h>
 
 // SYNC_READ_HANDLER(Only for Protocol 2.0)
 #define SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT 0
@@ -48,9 +47,6 @@ ros::NodeHandle  nh;
 sensor_msgs::JointState joint_states_msg;
 ros::Publisher joint_states_pub("joint_states", &joint_states_msg);
 
-std_msgs::Int32 present_position_msg;
-ros::Publisher present_position_pub("PresentPosition", &present_position_msg);
-
 std::map<std::string, uint8_t> map_id_wheel_dynamixels;
 
 uint8_t wheel_id_array[2] = {DXL_ID_WHEEL_RIGHT, DXL_ID_WHEEL_LEFT};
@@ -62,9 +58,6 @@ float wheel_current[2] = { 0.0, 0.0 };
 int32_t wheel_raw_velocity[2] = {0, 0};
 float wheel_velocity[2] = { 0.0, 0.0 };
 char *wheel_names[2] = {"wheel_right", "wheel_left"};
-
-const uint8_t handler_index = 0;
-
 
 bool initWheelSyncWrite(void)
 {
@@ -305,7 +298,6 @@ void setup() {
   
   nh.initNode();
   nh.advertise(joint_states_pub);
-  nh.advertise(present_position_pub);
   nh.subscribe(cmd_vel_sub);
 
   if (!initWorkbench(DEVICE_NAME,BAUDRATE)) return;

@@ -118,6 +118,30 @@ Use a USB2Dynamixel to connect directly your laptop to a dynamixel : http://supp
 
 Protocol 2 doc : http://emanual.robotis.com/docs/en/dxl/protocol2/
 
+=================== Test Twist Robot ============================================
+Download the code : ~/Projects/catkin_arduino_dynamixel_ws/src/rqt_plugins/arduino/mobile/mobile.ino
+
+launch ros python serial :
+-------------------------
+cd ~/Projects/catkin_arduino_dynamixel_ws
+source devel/setup.bash
+roslaunch rqt_plugins rospython_serial.launch
+
+Launch teleop node of turtlebot3 package :
+----------------------------------------
+cd ~/turtlebot3/catkin_ws
+source devel/setup.bash
+roslaunch turtlebot3_teleop turtlebot3_teleop_key.launch
+
+See/echo joint_state :
+---------------------
+rostopic echo /joint_states
+
+Publish a twist :
+----------------
+rostopic pub -1 /cmd_vel geometry_msgs/Twist  '{linear:  {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.01,y: 0.0,z: 0.0}}'
+
+
 
 
 

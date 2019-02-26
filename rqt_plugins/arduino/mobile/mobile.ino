@@ -214,8 +214,9 @@ void commandVelocityCallback(const geometry_msgs::Twist &msg)
 
   double velocity_constant_value = 1 / (WHEEL_RADIUS * RPM_MX_64_2 * 0.10472);
 
-  // Vleft = VO + w prod scal vect(OM)
-  
+  // v = r x w ==> r = WHEEL_SEPARATION / 2, w = robot_ang_vel
+  // to go on left side => upper wheel right, down wheel left
+
   wheel_velocity[RIGHT] = robot_lin_vel + (robot_ang_vel * WHEEL_SEPARATION / 2);
   wheel_velocity[LEFT]  = robot_lin_vel - (robot_ang_vel * WHEEL_SEPARATION / 2);
 
@@ -338,12 +339,28 @@ bool initWheelDynamixels(void)
     it++;
   }
 
+ /*
+  // Change Drive_Mode for Right Wheel
+  int32_t drive_mode = 0;
+  result = dxl_wb.writeRegister(DXL_ID_WHEEL_RIGHT, "Drive_Mode", drive_mode, &log);
+  if (result == false)
+  {
+      Serial.println(log);
+      Serial.print("Failed to change Drive Mode of the Right Wheel !");
+  }
+  else
+  {
+      Serial.println("Succeeded to change Drive Mode of the Right Wheel !");
+  }*/
+
   return true;
 }
 
 void printWheelsInfos(void)
 {
-  int32_t velocity_limit;
+  int32_t velocity_limit = 0;
+  int32_t  drive_mode = 0;
+  int32_t  firmware_version = 0;
   bool result = false;
   const char* log;
 
@@ -358,6 +375,27 @@ void printWheelsInfos(void)
 
   result = dxl_wb.readRegister(DXL_ID_WHEEL_RIGHT, "Velocity_Limit", &velocity_limit, &log);
   Serial.print("velocity limit : "); Serial.println(velocity_limit);
+  result = dxl_wb.readRegister(DXL_ID_WHEEL_RIGHT, "Drive_Mode", &drive_mode, &log);
+  if (result == false)
+  {
+    Serial.println(log);
+    Serial.print("Failed to read the Drive Mode !");
+  }
+  else
+  {
+    Serial.print("drive mode : "); Serial.println(drive_mode);
+  }
+  result = dxl_wb.readRegister(DXL_ID_WHEEL_RIGHT, "Firmware_Version", &firmware_version, &log);
+  if (result == false)
+  {
+    Serial.println(log);
+    Serial.print("Failed to read Firmware version !");
+  }
+  else
+  {
+    Serial.print("firmware version : "); Serial.println(firmware_version);
+  }
+  
 
   const ModelInfo* modelInfoWheelLeft =  dxl_wb.getModelInfo(DXL_ID_WHEEL_LEFT, &log);
   Serial.println("Wheel Left Infos :");
@@ -372,6 +410,27 @@ void printWheelsInfos(void)
   Serial.println("");
   Serial.print("wheel left velocity limit : ");
   Serial.println(velocity_limit);
+  result = dxl_wb.readRegister(DXL_ID_WHEEL_LEFT, "Drive_Mode", &drive_mode, &log);
+  if (result == false)
+  {
+    Serial.println(log);
+    Serial.print("Failed to read the Drive Mode !");
+  }
+  else
+  {
+    Serial.print("drive mode : "); Serial.println(drive_mode);
+  }
+  result = dxl_wb.readRegister(DXL_ID_WHEEL_LEFT, "Firmware_Version", &firmware_version, &log);
+  if (result == false)
+  {
+    Serial.println(log);
+    Serial.print("Failed to read Firmware version !");
+  }
+  else
+  {
+    Serial.print("firmware version : "); Serial.println(firmware_version);
+  }
+  
 }
 
 void setup() {

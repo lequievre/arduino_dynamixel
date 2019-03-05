@@ -124,6 +124,15 @@ bool readWheelSyncDatas()
 {
     bool result = false;
     const char* log;
+
+    wheel_raw_current[0] = 0;
+    wheel_raw_current[1] = 0;
+
+    union ToShort
+    {
+        uint32_t intValue;
+        uint16_t shortValues[2];
+    } toShort;
     
     result = dxl_wb.syncRead(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
                                wheel_id_array,
@@ -140,8 +149,24 @@ bool readWheelSyncDatas()
 
     //wheel_current[0] = dxl_wb.convertValue2Current((int16_t)wheel_raw_current[0]);
     //wheel_current[1] = dxl_wb.convertValue2Current((int16_t)wheel_raw_current[1]);
-    wheel_current[0] = wheel_raw_current[0] * CURRENT_UNIT;
-    wheel_current[1] = wheel_raw_current[0] * CURRENT_UNIT;
+    //wheel_current[0] = wheel_raw_current[0] * CURRENT_UNIT;
+    //wheel_current[1] = wheel_raw_current[1] * CURRENT_UNIT;
+
+    int16_t inter[2];
+    //inter[0] = (int16_t)wheel_raw_current[0];
+    //inter[1] = (int16_t)wheel_raw_current[1];
+
+   // memcpy( &inter[0], &wheel_raw_current[0], 2 );
+   // memcpy( &inter[1], &wheel_raw_current[1], 2 );
+    
+   // wheel_current[0] = ((float)inter[0]) * 1.0;
+   // wheel_current[1] = ((float)inter[1]) * 1.0;
+
+   toShort.intValue = wheel_raw_current[1];
+   int16_t shortValue = toShort.shortValues[0];
+
+   wheel_current[0] = (int16_t)wheel_raw_current[0] * 1.0;
+   wheel_current[1] = shortValue * 1.0;
          
     result = dxl_wb.getSyncReadData(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
                                                       wheel_id_array,
@@ -236,8 +261,8 @@ void commandVelocityCallback(const geometry_msgs::Twist &msg)
   //dynamixel_current[0] = robot_lin_vel * 10000;
   //dynamixel_current[1] = robot_lin_vel * 10000;
 
-  dynamixel_current[0] = 1900;
-  dynamixel_current[1] = 600;
+  dynamixel_current[0] = msg.linear.x;
+  dynamixel_current[1] = msg.linear.y;
   
   if ((dynamixel_current[0] > current_limit) || (dynamixel_current[0] > current_limit))
   {
@@ -360,7 +385,52 @@ bool initWheelDynamixels(void)
       Serial.print("model name : ");
       Serial.println(dxl_wb.getModelName((uint8_t)it->second));
     }
+
+    // Set Goal Current to 0
+    result = dxl_wb.writeRegister((uint8_t)it->second, "Goal_Current", 0, &log);
+    if (result == false)
+    {
+      Serial.println(log);
+      Serial.print("Failed to set the Goal Current to 0 !");
+      Serial.print((it->first).c_str());
+      Serial.println(" !");
+      Serial.print("ID : ");
+      Serial.println((uint8_t)it->second);
+      return false;
+    }
+    else
+    {
+      Serial.println("Succeeded  to set the Current Current to 0 !");
+      Serial.print((it->first).c_str());
+      Serial.println(" !");
+      Serial.print("ID : ");
+      Serial.println((uint8_t)it->second);
+    }
+
+    // Set Torque to ON
+    result = dxl_wb.torqueOn((uint8_t)it->second, &log);
+    //result = dxl_wb.writeRegister((uint8_t)it->second, "Torque_Enable", 1, &log);
+    if (result == false)
+    {
+      Serial.println(log);
+      Serial.print("Failed to set Torque to ON !");
+      Serial.print((it->first).c_str());
+      Serial.println(" !");
+      Serial.print("ID : ");
+      Serial.println((uint8_t)it->second);
+      return false;
+    }
+    else
+    {
+      Serial.println("Succeeded  to set Torque to ON !");
+      Serial.print((it->first).c_str());
+      Serial.println(" !");
+      Serial.print("ID : ");
+      Serial.println((uint8_t)it->second);
+    }
+    
     it++;
+    
   }
 
  /*

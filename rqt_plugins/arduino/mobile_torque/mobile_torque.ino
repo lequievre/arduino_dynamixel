@@ -1,3 +1,4 @@
+
 /*
  * Laurent LEQUIEVRE
  * Research Engineer, CNRS (France)
@@ -14,6 +15,10 @@
 #include <ros.h>
 #include <sensor_msgs/JointState.h>
 #include <geometry_msgs/Twist.h>
+#include <std_msgs/Float64MultiArray.h>
+
+// For Matrix
+#include <BasicLinearAlgebra.h>
 
 // SYNC_READ_HANDLER(Only for Protocol 2.0)
 #define SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT 0
@@ -47,11 +52,23 @@
 #define WHEEL_RADIUS          0.047  // 4.7 cm
 #define WHEEL_SEPARATION      0.21   // 21 cm
 
+#define GAIN_KV1              100.0
+#define GAIN_KV2              100.0
+
 DynamixelWorkbench dxl_wb;
+
+union myUnion {
+  uint32_t my4byteNumber;
+  uint16_t my2byteNumber[2];
+};
 
 ros::NodeHandle  nh;
 sensor_msgs::JointState joint_states_msg;
 ros::Publisher joint_states_pub("joint_states", &joint_states_msg);
+
+// Use publisher to debug matrix results !
+std_msgs::Float64MultiArray debug_matrix_msg;
+ros::Publisher debug_matrix_pub("debug_matrix", &debug_matrix_msg);
 
 std::map<std::string, uint8_t> map_id_wheel_dynamixels;
 
@@ -64,6 +81,21 @@ float wheel_current[2] = { 0.0, 0.0 };
 int32_t wheel_raw_velocity[2] = {0, 0};
 float wheel_velocity[2] = { 0.0, 0.0 };
 char *wheel_names[2] = {"wheel_right", "wheel_left"};
+
+using namespace BLA;
+
+ArrayMatrix<2,3,double> matrix_Jinv;
+ArrayMatrix<2,1,double> matrix_wheelAngularVelocityCommand;
+ArrayMatrix<2,1,double> matrix_wheelAngularAcc;
+ArrayMatrix<2,2,double> matrix_wheelVelocityGain = {GAIN_KV1, 0, 0, GAIN_KV2};
+
+
+void updateJinv(ArrayMatrix<2,3,double> & J, double orientation, double radius, double wheel_separation)
+{
+
+  J <<  cos(orientation)/radius, sin(orientation)/radius, wheel_separation/(2*radius), 
+        cos(orientation)/radius, sin(orientation)/radius, -wheel_separation/(2*radius);
+}
 
 bool initWheelSyncWrite(void)
 {
@@ -124,16 +156,14 @@ bool readWheelSyncDatas()
 {
     bool result = false;
     const char* log;
+    
+    myUnion unionOfBytes;
+    int16_t currentRaw = 0;
+    
 
     wheel_raw_current[0] = 0;
     wheel_raw_current[1] = 0;
 
-    union ToShort
-    {
-        uint32_t intValue;
-        uint16_t shortValues[2];
-    } toShort;
-    
     result = dxl_wb.syncRead(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
                                wheel_id_array,
                                NB_WHEEL,
@@ -147,28 +177,17 @@ bool readWheelSyncDatas()
                           wheel_raw_current,
                           &log);
 
-    //wheel_current[0] = dxl_wb.convertValue2Current((int16_t)wheel_raw_current[0]);
-    //wheel_current[1] = dxl_wb.convertValue2Current((int16_t)wheel_raw_current[1]);
-    //wheel_current[0] = wheel_raw_current[0] * CURRENT_UNIT;
-    //wheel_current[1] = wheel_raw_current[1] * CURRENT_UNIT;
 
-    int16_t inter[2];
-    //inter[0] = (int16_t)wheel_raw_current[0];
-    //inter[1] = (int16_t)wheel_raw_current[1];
+   unionOfBytes.my4byteNumber = wheel_raw_current[0];
+   currentRaw = unionOfBytes.my2byteNumber[0];
+   wheel_current[0] = currentRaw * CURRENT_UNIT;
 
-   // memcpy( &inter[0], &wheel_raw_current[0], 2 );
-   // memcpy( &inter[1], &wheel_raw_current[1], 2 );
-    
-   // wheel_current[0] = ((float)inter[0]) * 1.0;
-   // wheel_current[1] = ((float)inter[1]) * 1.0;
+   unionOfBytes.my4byteNumber = wheel_raw_current[1];
+   currentRaw = unionOfBytes.my2byteNumber[0];
+   wheel_current[1] = currentRaw * CURRENT_UNIT;
 
-   toShort.intValue = wheel_raw_current[1];
-   int16_t shortValue = toShort.shortValues[0];
-
-   wheel_current[0] = (int16_t)wheel_raw_current[0] * 1.0;
-   wheel_current[1] = shortValue * 1.0;
          
-    result = dxl_wb.getSyncReadData(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
+   result = dxl_wb.getSyncReadData(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
                                                       wheel_id_array,
                                                       NB_WHEEL,
                                                       ADDR_PRESENT_VELOCITY_2,
@@ -196,55 +215,42 @@ bool readWheelSyncDatas()
 
 void commandVelocityCallback(const geometry_msgs::Twist &msg)
 {
-
-  /*
-    RPM = revolution per minute
-    
-    To convert RPM to rad/s, multiply by 0.10472 (which is an approximation of pi/30)
-    RPM * 0.10472 = rad/s
-    
-    To convert rad/s to RPM, multiply by 9.54929 (which is an approximation of 30/pi)
-    rad/s * 9.54929 = RPM
-    
-    The Angular to Linear Velocity formular is : v = r × ω
-
-    Where:
-      v: Linear velocity, in m/s
-      r: Radius, in meter
-      ω: Angular velocity, in rad/s
-    
-    The RPM to Linear Velocity formular is : v = r × RPM × 0.10472
-    
-    Where:
-      v: Linear velocity, in m/s
-      r: Radius, in meter
-      RPM: Angular velocity, in RPM (Rounds per Minute)
-
-    ==> v = r * w = r * (RPM * 0.10472)
-    ==> v = r * ((RPM * Goal_Velocity) * 0.10472)    
-    ==> Goal_Velocity = v / (r * RPM * 0.10472) = v * VELOCITY_CONSTANT_VALUE
-      
-   */
-
   bool result = false;
   const char* log;
   
-  double robot_lin_vel = msg.linear.x;
-  double robot_ang_vel = msg.angular.z;
+  ArrayMatrix<3,1,double> matrix_wheelVelocityCommand;
+  ArrayMatrix<2,1,double> matrix_wheelVelocityResponse;
 
-  /*double wheel_velocity[2];
-  int32_t dynamixel_velocity[2];
-  const uint8_t LEFT = 1;
-  const uint8_t RIGHT = 0;
+  matrix_wheelVelocityCommand << msg.linear.x, msg.linear.y, msg.angular.z;
 
-  double velocity_constant_value = 1 / (WHEEL_RADIUS * RPM_MX_64_2 * 0.10472);
+  matrix_Jinv <<  cos(msg.angular.z)/WHEEL_RADIUS, sin(msg.angular.z)/WHEEL_RADIUS, WHEEL_SEPARATION/(2.0*WHEEL_RADIUS), 
+        cos(msg.angular.z)/WHEEL_RADIUS, sin(msg.angular.z)/WHEEL_RADIUS, -WHEEL_SEPARATION/(2*WHEEL_RADIUS);
 
-  wheel_velocity[RIGHT] = robot_lin_vel + (robot_ang_vel * WHEEL_SEPARATION / 2);
-  wheel_velocity[LEFT]  = robot_lin_vel - (robot_ang_vel * WHEEL_SEPARATION / 2);
 
-  dynamixel_velocity[RIGHT] = wheel_velocity[RIGHT] * velocity_constant_value;
-  dynamixel_velocity[LEFT]  = wheel_velocity[LEFT] * velocity_constant_value;*/
-  
+  matrix_wheelAngularVelocityCommand = matrix_Jinv * matrix_wheelVelocityCommand;
+
+  matrix_wheelVelocityResponse << wheel_velocity[0], wheel_velocity[1];
+
+  matrix_wheelAngularAcc = matrix_wheelVelocityGain * ( matrix_wheelAngularVelocityCommand - matrix_wheelVelocityResponse);
+
+
+  // Publish matrix data to debug 
+
+    std_msgs::MultiArrayDimension myDim;
+    float myArray[2] = { matrix_wheelAngularAcc(0,0), matrix_wheelAngularAcc(1,0) };
+
+    debug_matrix_msg.data_length = 2;
+    debug_matrix_msg.data = myArray;
+    debug_matrix_msg.layout.data_offset = 0;
+    debug_matrix_msg.layout.dim = &myDim;
+    debug_matrix_msg.layout.dim->label = "matrix_values";
+    debug_matrix_msg.layout.dim->size = 2;
+    debug_matrix_msg.layout.dim->stride = 2;
+    debug_matrix_msg.layout.dim_length = 1;
+   
+    debug_matrix_pub.publish(&debug_matrix_msg);
+
+ 
   int32_t current_limit = 0;
   result = dxl_wb.readRegister(DXL_ID_WHEEL_RIGHT, "Current_Limit", &current_limit, &log);
   if (result == false)
@@ -576,6 +582,7 @@ void setup() {
   
   nh.initNode();
   nh.advertise(joint_states_pub);
+  nh.advertise(debug_matrix_pub);
   nh.subscribe(cmd_vel_sub);
 
   if (!initWorkbench(DEVICE_NAME,BAUDRATE)) return;

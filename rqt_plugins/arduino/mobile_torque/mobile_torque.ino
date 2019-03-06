@@ -52,8 +52,8 @@
 #define WHEEL_RADIUS          0.047  // 4.7 cm
 #define WHEEL_SEPARATION      0.21   // 21 cm
 
-#define GAIN_KV1              100.0
-#define GAIN_KV2              100.0
+#define GAIN_KV1              1.0
+#define GAIN_KV2              1.0
 
 DynamixelWorkbench dxl_wb;
 

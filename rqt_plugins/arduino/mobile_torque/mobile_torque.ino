@@ -27,11 +27,11 @@
 #define SYNC_WRITE_HANDLER_FOR_GOAL_CURRENT 1
 
 // Protocol 2.0
-#define ADDR_PRESENT_CURRENT_2 126
-#define ADDR_PRESENT_VELOCITY_2 128
-#define ADDR_PRESENT_POSITION_2 132
+#define ADDR_PRESENT_CURRENT_2    126
+#define ADDR_PRESENT_VELOCITY_2   128
+#define ADDR_PRESENT_POSITION_2   132
 
-#define LENGTH_PRESENT_CURRENT_2 2
+#define LENGTH_PRESENT_CURRENT_2  2
 #define LENGTH_PRESENT_VELOCITY_2 4
 #define LENGTH_PRESENT_POSITION_2 4
 
@@ -42,15 +42,28 @@
   #define DEVICE_NAME ""
 #endif  
 
-#define BAUDRATE  57600
-#define DXL_ID_WHEEL_RIGHT   2
-#define DXL_ID_WHEEL_LEFT    3
-#define NB_WHEEL             2
+#define BAUDRATE              57600
+#define DXL_ID_WHEEL_RIGHT    2
+#define DXL_ID_WHEEL_LEFT     3
+#define NB_WHEEL              2
 
-#define CURRENT_UNIT          3.36f   //  3.36[mA]
-#define RPM_MX_64_2           0.229   // 0.229 rpm
-#define WHEEL_RADIUS          0.047  // 4.7 cm
-#define WHEEL_SEPARATION      0.21   // 21 cm
+#define CURRENT_UNIT          3.36f     // 3.36[mA]
+#define RPM_MX_64_2           0.229     // 0.229 rpm
+
+#define WHEEL_RADIUS          0.047     // 4.7 cm
+#define WHEEL_SEPARATION      0.21      // 21 cm
+#define WHEEL_MASS            0.240     // 0.24 kg
+#define WHEEL_INERTIA         (0.5 * WHEEL_MASS * WHEEL_RADIUS * WHEEL_RADIUS)
+
+#define LINK_MASS             0.168     // 0.168 kg (platic link + motor)
+#define ARM_LINK_MASS         (3 * LINK_MASS)  // mass of arm based on 3 links
+
+#define BASE_HEIGHT           0.16      // 0.16 m
+#define BASE_WIDTH            0.145     // 0.145 m
+#define BASE_MASS             1.488     // 1.488 kg
+#define BASE_INERTIA          ((1/12) * BASE_MASS * ((BASE_HEIGHT * BASE_HEIGHT) + (BASE_WIDTH * BASE_WIDTH)))
+
+#define DEVICE_MASS           (BASE_MASS + ARM_LINK_MASS + (2 * WHEEL_MASS))
 
 #define GAIN_KV1              1.0
 #define GAIN_KV2              1.0
@@ -89,6 +102,12 @@ ArrayMatrix<2,1,double> matrix_wheelAngularVelocityCommand;
 ArrayMatrix<2,1,double> matrix_wheelAngularAcc;
 ArrayMatrix<2,2,double> matrix_wheelVelocityGain = {GAIN_KV1, 0, 0, GAIN_KV2};
 
+ArrayMatrix<2,2,double> matrix_inertia = { 
+((DEVICE_MASS * WHEEL_RADIUS * WHEEL_RADIUS * 0.25) + WHEEL_INERTIA + ( ((WHEEL_RADIUS * WHEEL_RADIUS)/(WHEEL_SEPARATION *WHEEL_SEPARATION)) * BASE_INERTIA )),
+((DEVICE_MASS * WHEEL_RADIUS * WHEEL_RADIUS * 0.25) - ( ((WHEEL_RADIUS * WHEEL_RADIUS)/(WHEEL_SEPARATION *WHEEL_SEPARATION)) * BASE_INERTIA )),
+((DEVICE_MASS * WHEEL_RADIUS * WHEEL_RADIUS * 0.25) - ( ((WHEEL_RADIUS * WHEEL_RADIUS)/(WHEEL_SEPARATION *WHEEL_SEPARATION)) * BASE_INERTIA )),
+((DEVICE_MASS * WHEEL_RADIUS * WHEEL_RADIUS * 0.25) + WHEEL_INERTIA + ( ((WHEEL_RADIUS * WHEEL_RADIUS)/(WHEEL_SEPARATION *WHEEL_SEPARATION)) * BASE_INERTIA ))
+};
 
 void updateJinv(ArrayMatrix<2,3,double> & J, double orientation, double radius, double wheel_separation)
 {
@@ -233,13 +252,16 @@ void commandVelocityCallback(const geometry_msgs::Twist &msg)
 
   matrix_wheelAngularAcc = matrix_wheelVelocityGain * ( matrix_wheelAngularVelocityCommand - matrix_wheelVelocityResponse);
 
+  ArrayMatrix<2,1,double> matrix_torque;
+  
+  matrix_torque = matrix_inertia * matrix_wheelAngularAcc;
 
   // Publish matrix data to debug 
 
     std_msgs::MultiArrayDimension myDim;
-    float myArray[2] = { matrix_wheelAngularAcc(0,0), matrix_wheelAngularAcc(1,0) };
+    float myArray[4] = { matrix_wheelAngularAcc(0,0), matrix_wheelAngularAcc(1,0), matrix_torque(0,0), matrix_torque(1,0) };
 
-    debug_matrix_msg.data_length = 2;
+    debug_matrix_msg.data_length = 4;
     debug_matrix_msg.data = myArray;
     debug_matrix_msg.layout.data_offset = 0;
     debug_matrix_msg.layout.dim = &myDim;
@@ -611,7 +633,6 @@ void loop() {
   Serial.print(wheel_current[0]);
   Serial.print(" wheel left current = ");
   Serial.println(wheel_current[1]);*/
-
 
   joint_states_msg.header.stamp = nh.now();
   joint_states_msg.header.frame_id = "kamal_robot";

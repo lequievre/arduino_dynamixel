@@ -31,9 +31,14 @@
 #define ADDR_PRESENT_VELOCITY_2   128
 #define ADDR_PRESENT_POSITION_2   132
 
+#define ADDR_GOAL_CURRENT_2   102
+#define LENGTH_GOAL_CURRENT_2  2
+
 #define LENGTH_PRESENT_CURRENT_2  2
 #define LENGTH_PRESENT_VELOCITY_2 4
 #define LENGTH_PRESENT_POSITION_2 4
+
+
 
 
 #if defined(__OPENCM904__)
@@ -68,11 +73,21 @@
 #define GAIN_KV1              1.0
 #define GAIN_KV2              1.0
 
+#define CURRENT_LIMIT         1941  // max current (no unit defined) 1941
+#define MAX_TORQUE            6   // max torque 6Nm
+#define TORQUE_TO_CURRENT     (CURRENT_LIMIT/MAX_TORQUE)
+
 DynamixelWorkbench dxl_wb;
 
 union myUnion {
   uint32_t my4byteNumber;
   uint16_t my2byteNumber[2];
+};
+
+
+union myUnionForCurrent {
+  int32_t my4byteNumber;
+  int16_t my2byteNumber[2];
 };
 
 ros::NodeHandle  nh;
@@ -109,6 +124,14 @@ ArrayMatrix<2,2,double> matrix_inertia = {
 ((DEVICE_MASS * WHEEL_RADIUS * WHEEL_RADIUS * 0.25) + WHEEL_INERTIA + ( ((WHEEL_RADIUS * WHEEL_RADIUS)/(WHEEL_SEPARATION *WHEEL_SEPARATION)) * BASE_INERTIA ))
 };
 
+ArrayMatrix<3,1,double> matrix_wheelVelocityCommand = {0.0, 0.0, 0.0};
+ArrayMatrix<2,1,double> matrix_wheelVelocityResponse = {0.0, 0.0};
+ArrayMatrix<2,1,double> matrix_torque = {0.0, 0.0};
+
+double cmd_linear_x = 0.0;
+double cmd_linear_y = 0.0;
+double cmd_angular_z = 0.0;
+
 void updateJinv(ArrayMatrix<2,3,double> & J, double orientation, double radius, double wheel_separation)
 {
 
@@ -122,11 +145,12 @@ bool initWheelSyncWrite(void)
   const char* log;
   
   result = dxl_wb.addSyncWriteHandler(map_id_wheel_dynamixels["wheel_right"], "Goal_Current", &log);
+  //result = dxl_wb.addSyncWriteHandler(ADDR_GOAL_CURRENT_2, LENGTH_GOAL_CURRENT_2, &log);
   if (result == false)
   {
     Serial.println(log);
     Serial.println("Failed to add sync write handler goal current wheel right");
-    //return false;
+    return false;
   }
   else
   {
@@ -138,7 +162,7 @@ bool initWheelSyncWrite(void)
   {
     Serial.println(log);
     Serial.println("Failed to add sync write handler goal current wheel left");
-    //return false;
+    return false;
   }
   else
   {
@@ -234,46 +258,21 @@ bool readWheelSyncDatas()
 
 void commandVelocityCallback(const geometry_msgs::Twist &msg)
 {
-  bool result = false;
-  const char* log;
+  //bool result = false;
+  //const char* log;
+
+  cmd_linear_x = msg.linear.x;
+  cmd_linear_y = msg.linear.y;
+  cmd_angular_z = msg.angular.z;
+
   
-  ArrayMatrix<3,1,double> matrix_wheelVelocityCommand;
-  ArrayMatrix<2,1,double> matrix_wheelVelocityResponse;
-
-  matrix_wheelVelocityCommand << msg.linear.x, msg.linear.y, msg.angular.z;
-
-  matrix_Jinv <<  cos(msg.angular.z)/WHEEL_RADIUS, sin(msg.angular.z)/WHEEL_RADIUS, WHEEL_SEPARATION/(2.0*WHEEL_RADIUS), 
-        cos(msg.angular.z)/WHEEL_RADIUS, sin(msg.angular.z)/WHEEL_RADIUS, -WHEEL_SEPARATION/(2*WHEEL_RADIUS);
-
-
-  matrix_wheelAngularVelocityCommand = matrix_Jinv * matrix_wheelVelocityCommand;
-
-  matrix_wheelVelocityResponse << wheel_velocity[0], wheel_velocity[1];
-
-  matrix_wheelAngularAcc = matrix_wheelVelocityGain * ( matrix_wheelAngularVelocityCommand - matrix_wheelVelocityResponse);
-
-  ArrayMatrix<2,1,double> matrix_torque;
+  matrix_wheelVelocityCommand << cmd_linear_x, cmd_linear_y, cmd_angular_z;
   
-  matrix_torque = matrix_inertia * matrix_wheelAngularAcc;
-
-  // Publish matrix data to debug 
-
-    std_msgs::MultiArrayDimension myDim;
-    float myArray[4] = { matrix_wheelAngularAcc(0,0), matrix_wheelAngularAcc(1,0), matrix_torque(0,0), matrix_torque(1,0) };
-
-    debug_matrix_msg.data_length = 4;
-    debug_matrix_msg.data = myArray;
-    debug_matrix_msg.layout.data_offset = 0;
-    debug_matrix_msg.layout.dim = &myDim;
-    debug_matrix_msg.layout.dim->label = "matrix_values";
-    debug_matrix_msg.layout.dim->size = 2;
-    debug_matrix_msg.layout.dim->stride = 2;
-    debug_matrix_msg.layout.dim_length = 1;
-   
-    debug_matrix_pub.publish(&debug_matrix_msg);
-
- 
-  int32_t current_limit = 0;
+  //matrix_wheelVelocityCommand(0) = cmd_linear_x;
+  //matrix_wheelVelocityCommand(1) = cmd_linear_y;
+  //matrix_wheelVelocityCommand(2) = cmd_angular_z;
+  
+  /*int32_t current_limit = 0;
   result = dxl_wb.readRegister(DXL_ID_WHEEL_RIGHT, "Current_Limit", &current_limit, &log);
   if (result == false)
   {
@@ -283,33 +282,9 @@ void commandVelocityCallback(const geometry_msgs::Twist &msg)
   else
   {
     Serial.print("Current limit : "); Serial.println(current_limit);
-  }
+  }*/
 
-  int32_t dynamixel_current[2];
-  //dynamixel_current[0] = robot_lin_vel * 10000;
-  //dynamixel_current[1] = robot_lin_vel * 10000;
-
-  dynamixel_current[0] = msg.linear.x;
-  dynamixel_current[1] = msg.linear.y;
   
-  if ((dynamixel_current[0] > current_limit) || (dynamixel_current[0] > current_limit))
-  {
-    Serial.print("Error -> send command over current limit !");
-  }
-  else
-  {
-    result = dxl_wb.syncWrite(SYNC_WRITE_HANDLER_FOR_GOAL_CURRENT, wheel_id_array, NB_WHEEL, dynamixel_current, 1, &log);
-  
-    if (result == false)
-    {
-      Serial.println(log);
-      Serial.println("Failed to sync write handler goal current");
-    }
-    else
-    {
-      Serial.println("Succeeded to sync write handler goal current");
-    }
-  }
 }
 
 ros::Subscriber<geometry_msgs::Twist> cmd_vel_sub("cmd_vel", commandVelocityCallback );
@@ -618,8 +593,12 @@ void setup() {
   printWheelsInfos();
 }
 
+unsigned long publisher_timer = 0;
+
 void loop() {
 
+  const char* log;
+  
   readWheelSyncDatas();
   /*Serial.print("wheel right position = ");
   Serial.print(wheel_position[0]);
@@ -634,19 +613,74 @@ void loop() {
   Serial.print(" wheel left current = ");
   Serial.println(wheel_current[1]);*/
 
-  joint_states_msg.header.stamp = nh.now();
-  joint_states_msg.header.frame_id = "kamal_robot";
-  joint_states_msg.velocity_length = 2;
-  joint_states_msg.position_length = 2;
-  joint_states_msg.effort_length = 2;
-  joint_states_msg.name_length = 2;
-  joint_states_msg.name = wheel_names;
-  joint_states_msg.position = wheel_position;
-  joint_states_msg.velocity = wheel_velocity;
-  joint_states_msg.effort = wheel_current;
+  matrix_Jinv <<  cos(cmd_angular_z)/WHEEL_RADIUS, sin(cmd_angular_z)/WHEEL_RADIUS, WHEEL_SEPARATION/(2.0*WHEEL_RADIUS), 
+        cos(cmd_angular_z)/WHEEL_RADIUS, sin(cmd_angular_z)/WHEEL_RADIUS, -WHEEL_SEPARATION/(2*WHEEL_RADIUS);
 
-  joint_states_pub.publish(&joint_states_msg);
+  matrix_wheelAngularVelocityCommand = matrix_Jinv * matrix_wheelVelocityCommand;
+
+  matrix_wheelVelocityResponse << wheel_velocity[0], wheel_velocity[1];
+
+  //matrix_wheelVelocityResponse(0) = wheel_velocity[0];
+  //matrix_wheelVelocityResponse(1) = wheel_velocity[1];
+
+  matrix_wheelAngularAcc = matrix_wheelVelocityGain * ( matrix_wheelAngularVelocityCommand - matrix_wheelVelocityResponse);
+
+  matrix_torque = matrix_inertia * matrix_wheelAngularAcc;
+
+  int16_t dynamixel_current[2];
+  int32_t dynamixel_current_of_2_wheels;
+  myUnionForCurrent unionOfBytes;
   
-  nh.spinOnce();
+  dynamixel_current[0] = (int16_t)(TORQUE_TO_CURRENT*matrix_torque(0));
+  dynamixel_current[1] = (int16_t)(TORQUE_TO_CURRENT*matrix_torque(1));
+  
+  if ((dynamixel_current[0] <= CURRENT_LIMIT) && (dynamixel_current[1] <= CURRENT_LIMIT))
+  {
+    
+    unionOfBytes.my2byteNumber[0] = dynamixel_current[0];
+    unionOfBytes.my2byteNumber[1] = dynamixel_current[1];
+    
+    dxl_wb.syncWrite(SYNC_WRITE_HANDLER_FOR_GOAL_CURRENT, wheel_id_array, NB_WHEEL, &unionOfBytes.my4byteNumber, 1, &log);
+    //dxl_wb.syncWrite(SYNC_WRITE_HANDLER_FOR_GOAL_CURRENT, &unionOfBytes.my4byteNumber, &log);
+  }
+
+  // Publish joint states
+  if (millis() > publisher_timer) 
+  {
+
+    joint_states_msg.header.stamp = nh.now();
+    joint_states_msg.header.frame_id = "kamal_robot";
+    joint_states_msg.velocity_length = 2;
+    joint_states_msg.position_length = 2;
+    joint_states_msg.effort_length = 2;
+    joint_states_msg.name_length = 2;
+    joint_states_msg.name = wheel_names;
+    joint_states_msg.position = wheel_position;
+    joint_states_msg.velocity = wheel_velocity;
+    joint_states_msg.effort = wheel_current;
+  
+    joint_states_pub.publish(&joint_states_msg);
+    publisher_timer = millis() + 100; //publish ten times a second
+    nh.spinOnce();
+  }
+  
+  // Publish matrix data to debug 
+
+ /* std_msgs::MultiArrayDimension myDim;
+  //float myArray[4] = { matrix_wheelAngularAcc(0,0), matrix_wheelAngularAcc(1,0), matrix_torque(0,0), matrix_torque(1,0) };
+  
+  float myArray[2] = { dynamixel_current[0], dynamixel_current[1] };
+  debug_matrix_msg.data_length = 2;
+  debug_matrix_msg.data = myArray;
+  debug_matrix_msg.layout.data_offset = 0;
+  debug_matrix_msg.layout.dim = &myDim;
+  debug_matrix_msg.layout.dim->label = "matrix_values";
+  debug_matrix_msg.layout.dim->size = 2;
+  debug_matrix_msg.layout.dim->stride = 2;
+  debug_matrix_msg.layout.dim_length = 1;
+ 
+  debug_matrix_pub.publish(&debug_matrix_msg);*/
+  
+  //nh.spinOnce();
   delay(1);
 }

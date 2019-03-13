@@ -38,9 +38,6 @@
 #define LENGTH_PRESENT_VELOCITY_2 4
 #define LENGTH_PRESENT_POSITION_2 4
 
-
-
-
 #if defined(__OPENCM904__)
   #define DEVICE_NAME "3" //Dynamixel on Serial3(USART3)  <-OpenCM 485EXP
 #elif defined(__OPENCR__)
@@ -70,25 +67,14 @@
 
 #define DEVICE_MASS           (BASE_MASS + ARM_LINK_MASS + (2 * WHEEL_MASS))
 
-#define GAIN_KV1              1.0
-#define GAIN_KV2              1.0
+#define GAIN_KV1              15.0
+#define GAIN_KV2              15.0
 
 #define CURRENT_LIMIT         1941  // max current (no unit defined) 1941
 #define MAX_TORQUE            6   // max torque 6Nm
 #define TORQUE_TO_CURRENT     (CURRENT_LIMIT/MAX_TORQUE)
 
 DynamixelWorkbench dxl_wb;
-
-union myUnion {
-  uint32_t my4byteNumber;
-  uint16_t my2byteNumber[2];
-};
-
-
-union myUnionForCurrent {
-  int32_t my4byteNumber;
-  int16_t my2byteNumber[2];
-};
 
 ros::NodeHandle  nh;
 sensor_msgs::JointState joint_states_msg;
@@ -112,32 +98,26 @@ char *wheel_names[2] = {"wheel_right", "wheel_left"};
 
 using namespace BLA;
 
-ArrayMatrix<2,3,double> matrix_Jinv;
-ArrayMatrix<2,1,double> matrix_wheelAngularVelocityCommand;
-ArrayMatrix<2,1,double> matrix_wheelAngularAcc;
-ArrayMatrix<2,2,double> matrix_wheelVelocityGain = {GAIN_KV1, 0, 0, GAIN_KV2};
+ArrayMatrix<2,3,float> matrix_Jinv;
+ArrayMatrix<2,1,float> matrix_wheelAngularVelocityCommand;
+ArrayMatrix<2,1,float> matrix_wheelAngularAcc;
+ArrayMatrix<2,2,float> matrix_wheelVelocityGain = {GAIN_KV1, 0.0, 0.0, GAIN_KV2};
 
-ArrayMatrix<2,2,double> matrix_inertia = { 
+ArrayMatrix<2,2,float> matrix_inertia = { 
 ((DEVICE_MASS * WHEEL_RADIUS * WHEEL_RADIUS * 0.25) + WHEEL_INERTIA + ( ((WHEEL_RADIUS * WHEEL_RADIUS)/(WHEEL_SEPARATION *WHEEL_SEPARATION)) * BASE_INERTIA )),
 ((DEVICE_MASS * WHEEL_RADIUS * WHEEL_RADIUS * 0.25) - ( ((WHEEL_RADIUS * WHEEL_RADIUS)/(WHEEL_SEPARATION *WHEEL_SEPARATION)) * BASE_INERTIA )),
 ((DEVICE_MASS * WHEEL_RADIUS * WHEEL_RADIUS * 0.25) - ( ((WHEEL_RADIUS * WHEEL_RADIUS)/(WHEEL_SEPARATION *WHEEL_SEPARATION)) * BASE_INERTIA )),
 ((DEVICE_MASS * WHEEL_RADIUS * WHEEL_RADIUS * 0.25) + WHEEL_INERTIA + ( ((WHEEL_RADIUS * WHEEL_RADIUS)/(WHEEL_SEPARATION *WHEEL_SEPARATION)) * BASE_INERTIA ))
 };
 
-ArrayMatrix<3,1,double> matrix_wheelVelocityCommand = {0.0, 0.0, 0.0};
-ArrayMatrix<2,1,double> matrix_wheelVelocityResponse = {0.0, 0.0};
-ArrayMatrix<2,1,double> matrix_torque = {0.0, 0.0};
+ArrayMatrix<3,1,float> matrix_wheelVelocityCommand = {0.0, 0.0, 0.0};
+ArrayMatrix<2,1,float> matrix_wheelVelocityResponse = {0.0, 0.0};
+ArrayMatrix<2,1,float> matrix_torque = {0.0, 0.0};
 
-double cmd_linear_x = 0.0;
-double cmd_linear_y = 0.0;
-double cmd_angular_z = 0.0;
-
-void updateJinv(ArrayMatrix<2,3,double> & J, double orientation, double radius, double wheel_separation)
-{
-
-  J <<  cos(orientation)/radius, sin(orientation)/radius, wheel_separation/(2*radius), 
-        cos(orientation)/radius, sin(orientation)/radius, -wheel_separation/(2*radius);
-}
+float cmd_linear_x = 0.0;
+float cmd_linear_y = 0.0;
+float cmd_angular_z = 0.0;
+float angular_z = 0.0;
 
 bool initWheelSyncWrite(void)
 {
@@ -145,7 +125,6 @@ bool initWheelSyncWrite(void)
   const char* log;
   
   result = dxl_wb.addSyncWriteHandler(map_id_wheel_dynamixels["wheel_right"], "Goal_Current", &log);
-  //result = dxl_wb.addSyncWriteHandler(ADDR_GOAL_CURRENT_2, LENGTH_GOAL_CURRENT_2, &log);
   if (result == false)
   {
     Serial.println(log);
@@ -200,10 +179,8 @@ bool readWheelSyncDatas()
     bool result = false;
     const char* log;
     
-    myUnion unionOfBytes;
     int16_t currentRaw = 0;
     
-
     wheel_raw_current[0] = 0;
     wheel_raw_current[1] = 0;
 
@@ -220,16 +197,14 @@ bool readWheelSyncDatas()
                           wheel_raw_current,
                           &log);
 
+   currentRaw = DXL_LOWORD(wheel_raw_current[0]);
+   //wheel_current[0] = currentRaw * CURRENT_UNIT;
+   wheel_current[0] = currentRaw;
 
-   unionOfBytes.my4byteNumber = wheel_raw_current[0];
-   currentRaw = unionOfBytes.my2byteNumber[0];
-   wheel_current[0] = currentRaw * CURRENT_UNIT;
+   currentRaw = DXL_LOWORD(wheel_raw_current[1]);
+   //wheel_current[1] = currentRaw * CURRENT_UNIT;
+   wheel_current[1] = currentRaw;
 
-   unionOfBytes.my4byteNumber = wheel_raw_current[1];
-   currentRaw = unionOfBytes.my2byteNumber[0];
-   wheel_current[1] = currentRaw * CURRENT_UNIT;
-
-         
    result = dxl_wb.getSyncReadData(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
                                                       wheel_id_array,
                                                       NB_WHEEL,
@@ -265,12 +240,33 @@ void commandVelocityCallback(const geometry_msgs::Twist &msg)
   cmd_linear_y = msg.linear.y;
   cmd_angular_z = msg.angular.z;
 
+  angular_z = atan(cmd_linear_y/cmd_linear_x);
+
   
   matrix_wheelVelocityCommand << cmd_linear_x, cmd_linear_y, cmd_angular_z;
   
   //matrix_wheelVelocityCommand(0) = cmd_linear_x;
   //matrix_wheelVelocityCommand(1) = cmd_linear_y;
   //matrix_wheelVelocityCommand(2) = cmd_angular_z;
+
+
+   /*uint8_t gc[2];
+   int16_t value;
+   if (cmd_angular_z < 0)
+    value = 0;
+    else
+     value = 1900;
+ 
+   gc[0] = DXL_LOBYTE(value);
+   gc[1] = DXL_HIBYTE(value);
+   
+   dxl_wb.writeRegister(DXL_ID_WHEEL_RIGHT, ADDR_GOAL_CURRENT_2, LENGTH_GOAL_CURRENT_2, gc, &log);
+
+   gc[0] = DXL_LOBYTE(value);
+   gc[1] = DXL_HIBYTE(value);
+   
+   dxl_wb.writeRegister(DXL_ID_WHEEL_LEFT, ADDR_GOAL_CURRENT_2, LENGTH_GOAL_CURRENT_2, gc, &log);
+   */
   
   /*int32_t current_limit = 0;
   result = dxl_wb.readRegister(DXL_ID_WHEEL_RIGHT, "Current_Limit", &current_limit, &log);
@@ -613,8 +609,8 @@ void loop() {
   Serial.print(" wheel left current = ");
   Serial.println(wheel_current[1]);*/
 
-  matrix_Jinv <<  cos(cmd_angular_z)/WHEEL_RADIUS, sin(cmd_angular_z)/WHEEL_RADIUS, WHEEL_SEPARATION/(2.0*WHEEL_RADIUS), 
-        cos(cmd_angular_z)/WHEEL_RADIUS, sin(cmd_angular_z)/WHEEL_RADIUS, -WHEEL_SEPARATION/(2*WHEEL_RADIUS);
+  matrix_Jinv <<  cos(angular_z)/WHEEL_RADIUS, sin(angular_z)/WHEEL_RADIUS, WHEEL_SEPARATION/(2.0*WHEEL_RADIUS), 
+        cos(angular_z)/WHEEL_RADIUS, sin(angular_z)/WHEEL_RADIUS, -WHEEL_SEPARATION/(2*WHEEL_RADIUS);
 
   matrix_wheelAngularVelocityCommand = matrix_Jinv * matrix_wheelVelocityCommand;
 
@@ -628,19 +624,40 @@ void loop() {
   matrix_torque = matrix_inertia * matrix_wheelAngularAcc;
 
   int16_t dynamixel_current[2];
-  int32_t dynamixel_current_of_2_wheels;
-  myUnionForCurrent unionOfBytes;
+  int32_t dynamixel_current_of_2_wheels[2];
+//  myUnionForCurrent unionOfBytes;
   
-  dynamixel_current[0] = (int16_t)(TORQUE_TO_CURRENT*matrix_torque(0));
-  dynamixel_current[1] = (int16_t)(TORQUE_TO_CURRENT*matrix_torque(1));
+  dynamixel_current[0] = (int16_t)(TORQUE_TO_CURRENT*matrix_torque(0,0));
+  dynamixel_current[1] = (int16_t)(TORQUE_TO_CURRENT*matrix_torque(1,0));
+
+   
+
+  dynamixel_current_of_2_wheels[0] = DXL_MAKEDWORD(dynamixel_current[0], 0);
+  dynamixel_current_of_2_wheels[1] = DXL_MAKEDWORD(dynamixel_current[1], 0);
+
+  
   
   if ((dynamixel_current[0] <= CURRENT_LIMIT) && (dynamixel_current[1] <= CURRENT_LIMIT))
   {
     
-    unionOfBytes.my2byteNumber[0] = dynamixel_current[0];
-    unionOfBytes.my2byteNumber[1] = dynamixel_current[1];
+   // unionOfBytes.my2byteNumber[0] = dynamixel_current[0];
+   // unionOfBytes.my2byteNumber[1] = dynamixel_current[1];
+
+
+   /*uint8_t gc[2];
+   gc[0] = DXL_LOBYTE(dynamixel_current[0]);
+   gc[1] = DXL_HIBYTE(dynamixel_current[0]);
+   
+   dxl_wb.writeRegister(DXL_ID_WHEEL_RIGHT, ADDR_GOAL_CURRENT_2, LENGTH_GOAL_CURRENT_2, gc, &log);
+
+   gc[0] = DXL_LOBYTE(dynamixel_current[1]);
+   gc[1] = DXL_HIBYTE(dynamixel_current[1]);
+   
+   dxl_wb.writeRegister(DXL_ID_WHEEL_LEFT, ADDR_GOAL_CURRENT_2, LENGTH_GOAL_CURRENT_2, gc, &log);
+
+   */
     
-    dxl_wb.syncWrite(SYNC_WRITE_HANDLER_FOR_GOAL_CURRENT, wheel_id_array, NB_WHEEL, &unionOfBytes.my4byteNumber, 1, &log);
+    dxl_wb.syncWrite(SYNC_WRITE_HANDLER_FOR_GOAL_CURRENT, wheel_id_array, NB_WHEEL, dynamixel_current_of_2_wheels, 1, &log);
     //dxl_wb.syncWrite(SYNC_WRITE_HANDLER_FOR_GOAL_CURRENT, &unionOfBytes.my4byteNumber, &log);
   }
 
@@ -660,26 +677,29 @@ void loop() {
     joint_states_msg.effort = wheel_current;
   
     joint_states_pub.publish(&joint_states_msg);
+
+    std_msgs::MultiArrayDimension myDim;
+    //float myArray[4] = { matrix_wheelAngularAcc(0,0), matrix_wheelAngularAcc(1,0), matrix_torque(0,0), matrix_torque(1,0) };
+  
+    float myArray[2] = { (float)dynamixel_current[0], (float)dynamixel_current[1] };
+    debug_matrix_msg.data_length = 2;
+    debug_matrix_msg.data = myArray;
+    debug_matrix_msg.layout.data_offset = 0;
+    debug_matrix_msg.layout.dim = &myDim;
+    debug_matrix_msg.layout.dim->label = "matrix_values";
+    debug_matrix_msg.layout.dim->size = 2;
+    debug_matrix_msg.layout.dim->stride = 2;
+    debug_matrix_msg.layout.dim_length = 1;
+   
+    debug_matrix_pub.publish(&debug_matrix_msg);
+
     publisher_timer = millis() + 100; //publish ten times a second
     nh.spinOnce();
   }
   
   // Publish matrix data to debug 
 
- /* std_msgs::MultiArrayDimension myDim;
-  //float myArray[4] = { matrix_wheelAngularAcc(0,0), matrix_wheelAngularAcc(1,0), matrix_torque(0,0), matrix_torque(1,0) };
   
-  float myArray[2] = { dynamixel_current[0], dynamixel_current[1] };
-  debug_matrix_msg.data_length = 2;
-  debug_matrix_msg.data = myArray;
-  debug_matrix_msg.layout.data_offset = 0;
-  debug_matrix_msg.layout.dim = &myDim;
-  debug_matrix_msg.layout.dim->label = "matrix_values";
-  debug_matrix_msg.layout.dim->size = 2;
-  debug_matrix_msg.layout.dim->stride = 2;
-  debug_matrix_msg.layout.dim_length = 1;
- 
-  debug_matrix_pub.publish(&debug_matrix_msg);*/
   
   //nh.spinOnce();
   delay(1);

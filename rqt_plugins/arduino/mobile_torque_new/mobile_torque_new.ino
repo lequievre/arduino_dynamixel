@@ -383,7 +383,28 @@ bool initWheelDynamixels(void)
     }
     else
     {
-      Serial.println("Succeeded  to set the Current Current to 0 !");
+      Serial.println("Succeeded  to set the Goal Current to 0 !");
+      Serial.print((it->first).c_str());
+      Serial.println(" !");
+      Serial.print("ID : ");
+      Serial.println((uint8_t)it->second);
+    }
+
+    // Set Goal PWM to 885
+    result = dxl_wb.writeRegister((uint8_t)it->second, "Goal_PWM", 885, &log);
+    if (result == false)
+    {
+      Serial.println(log);
+      Serial.print("Failed to set the Goal PWM to 885 !");
+      Serial.print((it->first).c_str());
+      Serial.println(" !");
+      Serial.print("ID : ");
+      Serial.println((uint8_t)it->second);
+      return false;
+    }
+    else
+    {
+      Serial.println("Succeeded  to set the Goal PWM to 885 !");
       Serial.print((it->first).c_str());
       Serial.println(" !");
       Serial.print("ID : ");
@@ -556,6 +577,11 @@ void setup() {
   initWheelSyncWrite();
 
   printWheelsInfos();
+
+  Serial.println("Matrix inertia: ");
+  Serial.print((float)matrix_inertia(0,0),10);  Serial.print(" "); Serial.println((float)matrix_inertia(0,1),10);
+  Serial.print((float)matrix_inertia(1,0),10);  Serial.print(" "); Serial.println((float)matrix_inertia(1,1),10);
+ 
 }
 
 unsigned long publisher_timer = 0;
@@ -563,7 +589,7 @@ unsigned long publisher_timer = 0;
 void loop() {
 
   const char* log;
-  
+
   readWheelSyncDatas();
   
   matrix_wheelVelocityResponse << wheel_velocity[0], wheel_velocity[1];
@@ -576,8 +602,8 @@ void loop() {
   int32_t dynamixel_current_of_2_wheels[2];
 
 
-  dynamixel_current[0] = ((matrix_torque(0,0) + 0.1575)/1.143)*3.36;
-  dynamixel_current[1] = ((matrix_torque(1,0) + 0.1575)/1.143)*3.36;
+  dynamixel_current[0] = ((matrix_torque(0,0) + 0.1575)/1.143)*0.00336;
+  dynamixel_current[1] = ((matrix_torque(1,0) + 0.1575)/1.143)*0.00336;
   
   //dynamixel_current[0] = (int16_t)(TORQUE_TO_CURRENT*matrix_torque(0,0));
   //dynamixel_current[1] = (int16_t)(TORQUE_TO_CURRENT*matrix_torque(1,0));

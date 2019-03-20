@@ -141,7 +141,7 @@ bool readWheelSyncDatas()
     //wheel_current[0] = dxl_wb.convertValue2Current((int16_t)wheel_raw_current[0]);
     //wheel_current[1] = dxl_wb.convertValue2Current((int16_t)wheel_raw_current[1]);
     wheel_current[0] = wheel_raw_current[0] * CURRENT_UNIT;
-    wheel_current[1] = wheel_raw_current[0] * CURRENT_UNIT;
+    wheel_current[1] = wheel_raw_current[1] * CURRENT_UNIT;
          
     result = dxl_wb.getSyncReadData(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
                                                       wheel_id_array,
